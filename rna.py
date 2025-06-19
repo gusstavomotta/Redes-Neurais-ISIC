@@ -12,6 +12,9 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from PIL import Image
 from sklearn.metrics import precision_score, recall_score, f1_score
+from torchvision.models import resnet50, ResNet50_Weights
+import torch, random, numpy as np
+
 
 #Define o tamanho do batch, taxa de aprendizado e número de épocas
 #verifica se a GPU está disponível e define o dispositivo
@@ -19,7 +22,16 @@ DATA_DIR = 'HAM10000_images_part_1'
 CSV_PATH = 'HAM10000_metadata.csv'
 BATCH_SIZE, LR, EPOCHS = 16, 1e-4, 25
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+THRESHOLD_TREINAMENTO = 0.35
+FATOR_OVERSAMPLING = 2
 
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 #Acessar o csv com o dados e filtra apenas nevos e melanomas
 #cria a coluna label, onde 1 é melanoma e 0 é nevo
 df = pd.read_csv(CSV_PATH)
@@ -34,7 +46,7 @@ val, test = train_test_split(temp, stratify=temp['label'], test_size=0.5, random
 # Repete os melanomas para balancear com os nevos
 # PODE GERAR ALGUM PROBLEMA USAR MUITO OVERSAMPLING
 mel_train = train[train['label'] == 1]
-train = pd.concat([train, mel_train, mel_train, mel_train, mel_train]).sample(frac=1, random_state=42).reset_index(drop=True)
+train = pd.concat([train] + [mel_train]*FATOR_OVERSAMPLING).sample(frac=1, random_state=42).reset_index(drop=True)
 
 # Contar quantos melanomas vieram para o treino
 print("Distribuição de classes no treino (split tradicional):")
@@ -83,7 +95,7 @@ test_dl = DataLoader(test_ds, BATCH_SIZE)
 
 #Cria o modelo ResNet50 pré-treinado
 #Substitui a última camada totalmente conectada para saída binária
-model = models.resnet50(pretrained=True)
+model = resnet50(weights=ResNet50_Weights.DEFAULT)
 model.fc = nn.Linear(model.fc.in_features, 1)
 model = model.to(DEVICE)
 
@@ -110,7 +122,7 @@ for ep in range(EPOCHS):
         loss.backward()
         opt.step()
         lh += loss.item()
-        preds = (torch.sigmoid(logits)>0.35).float()
+        preds = (torch.sigmoid(logits)>THRESHOLD_TREINAMENTO).float()
         acc += (preds==lbls).float().mean().item()
     print(f"[Época {ep+1}] Erro de Treinamento: {lh/len(train_dl):.4f} | Acurácia de Treinamento: {acc/len(train_dl):.4f}")
 
@@ -122,7 +134,7 @@ for ep in range(EPOCHS):
             logits = model(imgs).squeeze(1)
             loss = criterion(logits, lbls)
             val_loss += loss.item()
-            preds = (torch.sigmoid(logits)>0.35).float()
+            preds = (torch.sigmoid(logits)>THRESHOLD_TREINAMENTO).float()
             val_acc += (preds==lbls).float().mean().item()
     print(f"[Época {ep+1}] Erro de Validação:   {val_loss/len(val_dl):.4f} | Acurácia de Validação:   {val_acc/len(val_dl):.4f}")
 
