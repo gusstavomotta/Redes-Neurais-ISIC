@@ -17,24 +17,29 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 #verifica se a GPU está disponível e define o dispositivo
 DATA_DIR = 'HAM10000_images_part_1'
 CSV_PATH = 'HAM10000_metadata.csv'
-BATCH_SIZE, LR, EPOCHS = 16, 1e-4, 10
+BATCH_SIZE, LR, EPOCHS = 16, 1e-4, 25
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 #Acessar o csv com o dados e filtra apenas nevos e melanomas
 #cria a coluna label, onde 1 é melanoma e 0 é nevo
 df = pd.read_csv(CSV_PATH)
 df = df[df['dx'].isin(['mel','nv'])]
-df['label'] = (df['dx']=='mel').astype(int)
+df['label'] = (df['dx'] == 'mel').astype(int)
 
-#Divide os dados em treino, validação e teste
-#30% dos dados para teste e validação, 70% para treino
+#Separa os dados em treino, validação e teste
 train, temp = train_test_split(df, stratify=df['label'], test_size=0.3, random_state=42)
 val, test = train_test_split(temp, stratify=temp['label'], test_size=0.5, random_state=42)
 
-#Aumenta o conjunto de treino duplicando os melanomas
-#É feito pois as classes estão desbalanceadas
+# Cria um conjunto de treino mais balanceado usando oversampling
+# Repete os melanomas para balancear com os nevos
+# PODE GERAR ALGUM PROBLEMA USAR MUITO OVERSAMPLING
 mel_train = train[train['label'] == 1]
-train = pd.concat([train, mel_train]).sample(frac=1, random_state=42).reset_index(drop=True)
+train = pd.concat([train, mel_train, mel_train, mel_train, mel_train]).sample(frac=1, random_state=42).reset_index(drop=True)
+
+# Contar quantos melanomas vieram para o treino
+print("Distribuição de classes no treino (split tradicional):")
+print(train['label'].value_counts())
+
 
 #Define a classe SkinDataset para carregar as imagens
 #Pega as imagens e retorna imagem com rótulo no getitem
@@ -89,8 +94,9 @@ weights = torch.tensor([(len(train_ds)-train['label'].sum())/len(train_ds),
 criterion = nn.BCEWithLogitsLoss(pos_weight=weights[1:2])
 opt = torch.optim.Adam(model.parameters(), LR)
 
-best_val_loss = float('inf') 
-
+best_val_loss = float('inf')
+patience = 3
+counter = 0
 # realiza o loop de treinamento e validação 
 # limita o threshold de predição para 0.35
 for ep in range(EPOCHS):
@@ -119,9 +125,15 @@ for ep in range(EPOCHS):
             preds = (torch.sigmoid(logits)>0.35).float()
             val_acc += (preds==lbls).float().mean().item()
     print(f"[Época {ep+1}] Erro de Validação:   {val_loss/len(val_dl):.4f} | Acurácia de Validação:   {val_acc/len(val_dl):.4f}")
+
     if val_loss < best_val_loss:
         best_val_loss = val_loss
-        torch.save(model.state_dict(), "best_model.pt") 
+        torch.save(model.state_dict(), "best_model.pt")
+        counter = 0
+    else:
+        counter += 1
+        if counter >= patience:
+            break
 
 print(f"Melhor erro de validação atingido: {best_val_loss / len(val_dl):.4f}")
 
