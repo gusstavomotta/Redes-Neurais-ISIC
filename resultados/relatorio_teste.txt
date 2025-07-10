@@ -1,0 +1,11 @@
+===== Relatório Final no Conjunto de Teste =====
+                precision    recall  f1-score   support
+
+     Nevo (nv)       0.97      0.97      0.97      1006
+Melanoma (mel)       0.81      0.84      0.82       167
+
+      accuracy                           0.95      1173
+     macro avg       0.89      0.90      0.90      1173
+  weighted avg       0.95      0.95      0.95      1173
+
+AUC da Curva ROC: 0.9723

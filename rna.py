@@ -1,6 +1,5 @@
 import os
 import random
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,8 +7,7 @@ from PIL import Image
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-
+from torch.utils.data import Dataset, DataLoader, ConcatDataset 
 import torchvision.transforms as T
 from torchvision.models import resnet50, ResNet50_Weights
 
@@ -20,21 +18,22 @@ from sklearn.metrics import (
     precision_score, recall_score, f1_score
 )
 from tqdm import tqdm
-from torch.utils.data import ConcatDataset 
 
+#Cria a pasta para salvar resultados
+os.makedirs("resultados", exist_ok=True)
+
+# Configurações iniciais, parametros globais
 DATA_DIR = 'HAM10000_images_part_1'
 CSV_PATH = 'HAM10000_metadata.csv'
-
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-BATCH_SIZE, LR, EPOCHS = 16, 1e-4, 25
-
-# Parâmetros de oversampling e threshold
-# oversampling 2 está equilibrado entre o número de melanomas e nevos no conjunto de treino
+BATCH_SIZE = 16
+LR = 1e-4
+EPOCHS = 25
 THRESHOLD_TREINAMENTO = 0.35
 FATOR_OVERSAMPLING = 2
-
 SEED = 42
+
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
@@ -42,6 +41,7 @@ torch.cuda.manual_seed_all(SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+# Carrega o CSV e divide os dados
 df = pd.read_csv(CSV_PATH)
 df = df[df['dx'].isin(['mel','nv'])]
 df['label'] = (df['dx'] == 'mel').astype(int)
@@ -55,6 +55,8 @@ train = pd.concat([train] + [mel_train]*FATOR_OVERSAMPLING).sample(frac=1, rando
 print("Distribuição de classes no treino (split tradicional):")
 print(train['label'].value_counts())
 
+# Preparação dos dados
+# SkinDataset para carregar as imagens e rotular
 class SkinDataset(Dataset):
 
     def __init__(self, df, img_dir, transforms=None):
@@ -116,7 +118,9 @@ train_dl = DataLoader(train_ds, BATCH_SIZE, shuffle=True)
 val_dl = DataLoader(val_ds, BATCH_SIZE)
 test_dl = DataLoader(test_ds, BATCH_SIZE)
 
-
+# Carrega o modelo ResNet50 pré-treinado
+# Ajusta a última camada para saída binária
+# coloca o peso para a classe melanoma maior para lidar com o desbalanceamento de classes
 model = resnet50(weights=ResNet50_Weights.DEFAULT)
 model.fc = nn.Linear(model.fc.in_features, 1)
 model = model.to(DEVICE)
@@ -128,13 +132,15 @@ weights = torch.tensor([(len(train_ds)-train['label'].sum())/len(train_ds),
 criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([2.0]).to(DEVICE))
 opt = torch.optim.Adam(model.parameters(), LR)
 
+# Treinamento do modelo
+# Inicializa variáveis para monitoramento, define f1 como early stopping, tolerancia de 5 epochs
 best_f1_mel = 0
 patience = 5
 counter = 0
-
 train_loss_history, val_loss_history = [], []
 val_recall_mel_history, val_f1_history = [], []
 
+#Efetivamente inicia o trienamento
 for ep in range(EPOCHS):
     model.train()
     lh, acc = 0, 0
@@ -187,7 +193,7 @@ for ep in range(EPOCHS):
 
     if f1 > best_f1_mel:
         best_f1_mel = f1
-        torch.save(model.state_dict(), "best_model.pt")
+        torch.save(model.state_dict(), "resultados/best_model.pt")
         counter = 0
     else:
         counter += 1
@@ -195,7 +201,10 @@ for ep in range(EPOCHS):
             print("Parando early: paciência esgotada.")
             break
 
-model.load_state_dict(torch.load("best_model.pt"))
+# Avaliação do modelo no conjunto de teste
+# Carrega o melhor modelo salvo
+# Printa no terminal o resultado e gera gráficos para avaliar o melhro threshold 
+model.load_state_dict(torch.load("resultados/best_model.pt"))
 model.eval()
 
 y_true, y_prob = [], []
@@ -230,7 +239,7 @@ plt.ylabel("Valor")
 plt.title("Métricas no Conjunto de Teste por Threshold")
 plt.legend()
 plt.tight_layout()
-plt.savefig("avaliacao_thresholds.png", dpi=300)
+plt.savefig("resultados/avaliacao_thresholds.png", dpi=300)
 plt.show()
 
 y_pred_final = [1 if p > THRESHOLD_TREINAMENTO else 0 for p in y_prob]
@@ -248,7 +257,7 @@ plt.title("Matriz de Confusão - Conjunto de Teste")
 plt.xlabel("Classe Predita")
 plt.ylabel("Classe Real")
 plt.tight_layout()
-plt.savefig("matriz_confusao.png", dpi=300, bbox_inches='tight')
+plt.savefig("resultados/matriz_confusao.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 plt.figure(figsize=(8,5))
@@ -261,149 +270,10 @@ plt.ylabel("Valor")
 plt.title("Histórico de Treinamento")
 plt.legend()
 plt.tight_layout()
-plt.savefig("historico_treinamento.png", dpi=300)
+plt.savefig("resultados/historico_treinamento.png", dpi=300)
 plt.show()
 
-with open("relatorio_teste.txt", "w") as f:
+with open("resultados/relatorio_teste.txt", "w") as f:
     f.write("===== Relatório Final no Conjunto de Teste =====\n")
     f.write(classification_report(y_true, y_pred_final, target_names=['Nevo (nv)', 'Melanoma (mel)']))
     f.write(f"\nAUC da Curva ROC: {roc_auc:.4f}\n")
-
-
-'''best_f1_mel = 0  # substitui best_recall
-patience = 5
-counter = 0
-
-train_loss_history, val_loss_history = [], []
-val_recall_mel_history, val_f1_history = [], []
-
-for ep in range(EPOCHS):
-    model.train()
-    lh, acc = 0, 0
-    for imgs, lbls in tqdm(train_dl, desc=f"Epoch {ep+1}"):
-        imgs, lbls = imgs.to(DEVICE), lbls.to(DEVICE)
-        opt.zero_grad()
-        logits = model(imgs).squeeze(1)
-        loss = criterion(logits, lbls)
-        loss.backward()
-        opt.step()
-        lh += loss.item()
-        preds = (torch.sigmoid(logits) > THRESHOLD_TREINAMENTO).float()
-        acc += (preds == lbls).float().mean().item()
-
-    train_loss = lh / len(train_dl)
-    train_loss_history.append(train_loss)
-    print(f"[Época {ep+1}] Erro de Treinamento: {train_loss:.4f} | Acurácia: {acc/len(train_dl):.4f}")
-
-    # Validação
-    model.eval()
-    val_loss, val_acc = 0, 0
-    y_true, y_pred, y_prob = [], [], []
-    with torch.no_grad():
-        for imgs, lbls in val_dl:
-            imgs, lbls = imgs.to(DEVICE), lbls.to(DEVICE)
-            logits = model(imgs).squeeze(1)
-            loss = criterion(logits, lbls)
-            val_loss += loss.item()
-
-            prob = torch.sigmoid(logits)
-            pred = (prob > THRESHOLD_TREINAMENTO).float()
-
-            y_true += lbls.tolist()
-            y_pred += pred.tolist()
-            y_prob += prob.tolist()
-
-            val_acc += (pred == lbls).float().mean().item()
-
-    val_loss /= len(val_dl)
-    val_acc /= len(val_dl)
-    prec = precision_score(y_true, y_pred)
-    rec = recall_score(y_true, y_pred)
-    f1 = f1_score(y_true, y_pred)
-
-    val_loss_history.append(val_loss)
-    val_recall_mel_history.append(rec)
-    val_f1_history.append(f1)
-
-    print(f"[Época {ep+1}] Erro de Validação: {val_loss:.4f} | Acurácia: {val_acc:.4f} | Recall MEL: {rec:.4f} | F1 MEL: {f1:.4f}")
-
-    # Salvar modelo se F1 MEL for o melhor até agora
-    if f1 > best_f1_mel:
-        best_f1_mel = f1
-        torch.save(model.state_dict(), "best_model.pt")
-        counter = 0
-    else:
-        counter += 1
-        if counter >= patience:
-            print("Parando early: paciência esgotada.")
-            break'''
-
-
-'''
-best_recall = 0
-patience = 5
-counter = 0
-
-train_loss_history, val_loss_history = [], []
-val_recall_mel_history, val_f1_history = [], []
-
-for ep in range(EPOCHS):
-    model.train()
-    lh, acc = 0, 0
-    for imgs, lbls in tqdm(train_dl, desc=f"Epoch {ep+1}"):
-        imgs, lbls = imgs.to(DEVICE), lbls.to(DEVICE)
-        opt.zero_grad()
-        logits = model(imgs).squeeze(1)
-        loss = criterion(logits, lbls)
-        loss.backward()
-        opt.step()
-        lh += loss.item()
-        preds = (torch.sigmoid(logits) > THRESHOLD_TREINAMENTO).float()
-        acc += (preds == lbls).float().mean().item()
-
-    train_loss = lh / len(train_dl)
-    train_loss_history.append(train_loss)
-    print(f"[Época {ep+1}] Erro de Treinamento: {train_loss:.4f} | Acurácia: {acc/len(train_dl):.4f}")
-
-    # Validação
-    model.eval()
-    val_loss, val_acc = 0, 0
-    y_true, y_pred, y_prob = [], [], []
-    with torch.no_grad():
-        for imgs, lbls in val_dl:
-            imgs, lbls = imgs.to(DEVICE), lbls.to(DEVICE)
-            logits = model(imgs).squeeze(1)
-            loss = criterion(logits, lbls)
-            val_loss += loss.item()
-
-            prob = torch.sigmoid(logits)
-            pred = (prob > THRESHOLD_TREINAMENTO).float()
-
-            y_true += lbls.tolist()
-            y_pred += pred.tolist()
-            y_prob += prob.tolist()
-
-            val_acc += (pred == lbls).float().mean().item()
-
-    val_loss /= len(val_dl)
-    val_acc /= len(val_dl)
-    prec = precision_score(y_true, y_pred)
-    rec = recall_score(y_true, y_pred)
-    f1 = f1_score(y_true, y_pred)
-
-    val_loss_history.append(val_loss)
-    val_recall_mel_history.append(rec)
-    val_f1_history.append(f1)
-
-    print(f"[Época {ep+1}] Erro de Validação: {val_loss:.4f} | Acurácia: {val_acc:.4f} | Recall MEL: {rec:.4f} | F1: {f1:.4f}")
-
-    # Salvar modelo se melhorou recall
-    if rec > best_recall:
-        best_recall = rec
-        torch.save(model.state_dict(), "best_model.pt")
-        counter = 0
-    else:
-        counter += 1
-        if counter >= patience:
-            print("Parando early: paciência esgotada.")
-            break'''
