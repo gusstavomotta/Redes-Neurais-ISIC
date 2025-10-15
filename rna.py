@@ -4,10 +4,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from PIL import Image
+from collections import Counter
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, ConcatDataset 
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import torchvision.transforms as T
 from torchvision.models import resnet50, ResNet50_Weights
 
@@ -19,261 +20,226 @@ from sklearn.metrics import (
 )
 from tqdm import tqdm
 
-#Cria a pasta para salvar resultados
-os.makedirs("resultados", exist_ok=True)
 
-# Configurações iniciais, parametros globais
-DATA_DIR = 'HAM10000_images_part_1'
-CSV_PATH = 'HAM10000_metadata.csv'
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-BATCH_SIZE = 16
-LR = 1e-4
-EPOCHS = 25
-THRESHOLD_TREINAMENTO = 0.35
-FATOR_OVERSAMPLING = 2
-SEED = 42
-
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-
-# Carrega o CSV e divide os dados
-df = pd.read_csv(CSV_PATH)
-df = df[df['dx'].isin(['mel','nv'])]
-df['label'] = (df['dx'] == 'mel').astype(int)
-
-train, temp = train_test_split(df, stratify=df['label'], test_size=0.3, random_state=42)
-val, test = train_test_split(temp, stratify=temp['label'], test_size=0.5, random_state=42)
-
-mel_train = train[train['label'] == 1]
-train = pd.concat([train] + [mel_train]*FATOR_OVERSAMPLING).sample(frac=1, random_state=42).reset_index(drop=True)
-
-print("Distribuição de classes no treino (split tradicional):")
-print(train['label'].value_counts())
-
-# Preparação dos dados
-# SkinDataset para carregar as imagens e rotular
 class SkinDataset(Dataset):
-
     def __init__(self, df, img_dir, transforms=None):
-        self.df, self.img_dir, self.tf = df.reset_index(drop=True), img_dir, transforms
+        self.df = df.reset_index(drop=True)
+        self.img_dir = img_dir
+        self.tf = transforms
 
-    def __len__(self): return len(self.df)
+    def __len__(self):
+        return len(self.df)
 
     def __getitem__(self, i):
         row = self.df.loc[i]
-        img = Image.open(os.path.join(self.img_dir, row['image_id'] + '.jpg')).convert('RGB')
-        lbl = row['label']
-        if self.tf: img = self.tf(img)
-        return img, torch.tensor(lbl, dtype=torch.float)
+        img_path = os.path.join(self.img_dir, row['image_id'] + '.jpg')
+        img = Image.open(img_path).convert('RGB')
+        lbl = torch.tensor(row['label'], dtype=torch.float)
+        
+        if self.tf:
+            img = self.tf(img)
+            
+        return img, lbl
 
-tf_train = T.Compose([
-    T.Resize((224,224)),
-    T.RandomHorizontalFlip(),
-    T.RandomRotation(20),
-    T.ColorJitter(),
-    T.ToTensor(),
-    T.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225]),
-])
-tf_test = T.Compose([
-    T.Resize((224,224)),
-    T.ToTensor(),
-    T.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225]),
-])
+def get_config():
+    return {
+        "DATA_DIR": 'HAM10000_images_part_1',
+        "CSV_PATH": 'HAM10000_metadata.csv',
+        "DEVICE": torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+        "BATCH_SIZE": 16,
+        "LR": 1e-4,
+        "EPOCHS": 25,
+        "THRESHOLD": 0.5,
+        "SEED": 42,
+        "NUM_WORKERS": 4,
+        "PATIENCE": 5
+    }
 
-tf_train_padrao = T.Compose([
-    T.Resize((224, 224)),
-    T.RandomHorizontalFlip(),
-    T.RandomRotation(15),
-    T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-    T.ToTensor(),
-    T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-])
+def prepare_data(config):
+    df = pd.read_csv(config['CSV_PATH'])
+    df = df[df['dx'].isin(['mel', 'nv'])]
+    df['label'] = (df['dx'] == 'mel').astype(int)
 
-tf_melanoma_extra = T.Compose([
-    T.Resize((224, 224)),
-    T.RandomHorizontalFlip(),
-    T.RandomVerticalFlip(),
-    T.RandomRotation(30),
-    T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
-    T.RandomAffine(degrees=30, translate=(0.1,0.1), scale=(0.8, 1.2)),
-    T.ToTensor(),
-    T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-])
+    train_df, temp_df = train_test_split(df, stratify=df['label'], test_size=0.3, random_state=config['SEED'])
+    val_df, test_df = train_test_split(temp_df, stratify=temp_df['label'], test_size=0.5, random_state=config['SEED'])
 
+    print("Distribuição de classes no treino (ANTES do balanceamento):")
+    print(train_df['label'].value_counts())
+    
+    tf_train = T.Compose([
+        T.Resize((224, 224)),
+        T.RandomHorizontalFlip(),
+        T.RandomVerticalFlip(),
+        T.RandomRotation(30),
+        T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3),
+        T.RandomAffine(degrees=20, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+        T.ToTensor(),
+        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ])
 
-train_ds_padrao = SkinDataset(train, DATA_DIR, tf_train_padrao)
-mel_train_extra = pd.concat([mel_train]*FATOR_OVERSAMPLING).reset_index(drop=True)
-train_ds_mel_aug = SkinDataset(mel_train_extra, DATA_DIR, tf_melanoma_extra)
-train_ds = ConcatDataset([train_ds_padrao, train_ds_mel_aug])
+    tf_test = T.Compose([
+        T.Resize((224, 224)),
+        T.ToTensor(),
+        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ])
 
-val_ds = SkinDataset(val, DATA_DIR, tf_test)
-test_ds = SkinDataset(test, DATA_DIR, tf_test)
+    train_ds = SkinDataset(train_df, config['DATA_DIR'], tf_train)
+    val_ds = SkinDataset(val_df, config['DATA_DIR'], tf_test)
+    test_ds = SkinDataset(test_df, config['DATA_DIR'], tf_test)
 
-train_dl = DataLoader(train_ds, BATCH_SIZE, shuffle=True)
-val_dl = DataLoader(val_ds, BATCH_SIZE)
-test_dl = DataLoader(test_ds, BATCH_SIZE)
+    counts = train_df['label'].value_counts()
+    class_weights = 1. / torch.tensor([counts[0], counts[1]], dtype=torch.float)
+    sample_weights = torch.tensor([class_weights[label] for label in train_df['label']])
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
 
-# Carrega o modelo ResNet50 pré-treinado
-# Ajusta a última camada para saída binária
-# coloca o peso para a classe melanoma maior para lidar com o desbalanceamento de classes
-model = resnet50(weights=ResNet50_Weights.DEFAULT)
-model.fc = nn.Linear(model.fc.in_features, 1)
-model = model.to(DEVICE)
+    train_dl = DataLoader(train_ds, batch_size=config['BATCH_SIZE'], sampler=sampler, num_workers=config['NUM_WORKERS'], pin_memory=True)
+    val_dl = DataLoader(val_ds, batch_size=config['BATCH_SIZE'], shuffle=False, num_workers=config['NUM_WORKERS'], pin_memory=True)
+    test_dl = DataLoader(test_ds, batch_size=config['BATCH_SIZE'], shuffle=False, num_workers=config['NUM_WORKERS'], pin_memory=True)
+    
+    pos_weight_value = counts[0] / counts[1]
+    
+    return train_dl, val_dl, test_dl, pos_weight_value
 
-weights = torch.tensor([(len(train_ds)-train['label'].sum())/len(train_ds),
-                        train['label'].sum()/len(train_ds)]).to(DEVICE)
+def build_model(device):
+    model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+    model.fc = nn.Linear(model.fc.in_features, 1)
+    model = model.to(device)
+    return model
 
-
-criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([2.0]).to(DEVICE))
-opt = torch.optim.Adam(model.parameters(), LR)
-
-# Treinamento do modelo
-# Inicializa variáveis para monitoramento, define f1 como early stopping, tolerancia de 5 epochs
-best_f1_mel = 0
-patience = 5
-counter = 0
-train_loss_history, val_loss_history = [], []
-val_recall_mel_history, val_f1_history = [], []
-
-#Efetivamente inicia o trienamento
-for ep in range(EPOCHS):
+def train_one_epoch(model, dataloader, criterion, optimizer, device, threshold):
     model.train()
-    lh, acc = 0, 0
-    for imgs, lbls in tqdm(train_dl, desc=f"Epoch {ep+1}"):
-        imgs, lbls = imgs.to(DEVICE), lbls.to(DEVICE)
-        opt.zero_grad()
+    total_loss = 0
+    total_acc = 0
+    for imgs, lbls in tqdm(dataloader, desc="Treinando"):
+        imgs, lbls = imgs.to(device), lbls.to(device)
+        
+        optimizer.zero_grad()
         logits = model(imgs).squeeze(1)
         loss = criterion(logits, lbls)
         loss.backward()
-        opt.step()
-        lh += loss.item()
-        preds = (torch.sigmoid(logits) > THRESHOLD_TREINAMENTO).float()
-        acc += (preds == lbls).float().mean().item()
+        optimizer.step()
+        
+        total_loss += loss.item()
+        preds = (torch.sigmoid(logits) > threshold).float()
+        total_acc += (preds == lbls).float().mean().item()
+        
+    avg_loss = total_loss / len(dataloader)
+    avg_acc = total_acc / len(dataloader)
+    return avg_loss, avg_acc
 
-    train_loss = lh / len(train_dl)
-    train_loss_history.append(train_loss)
-    print(f"[Época {ep+1}] Erro de Treinamento: {train_loss:.4f} | Acurácia: {acc/len(train_dl):.4f}")
-
-    # Validação
+def evaluate(model, dataloader, criterion, device, threshold):
     model.eval()
-    val_loss, val_acc = 0, 0
-    y_true, y_pred, y_prob = [], [], []
+    total_loss = 0
+    y_true, y_pred = [], []
     with torch.no_grad():
-        for imgs, lbls in val_dl:
-            imgs, lbls = imgs.to(DEVICE), lbls.to(DEVICE)
+        for imgs, lbls in tqdm(dataloader, desc="Avaliando"):
+            imgs, lbls = imgs.to(device), lbls.to(device)
             logits = model(imgs).squeeze(1)
             loss = criterion(logits, lbls)
-            val_loss += loss.item()
+            total_loss += loss.item()
+            
+            probs = torch.sigmoid(logits)
+            preds = (probs > threshold).float()
+            
+            y_true.extend(lbls.cpu().tolist())
+            y_pred.extend(preds.cpu().tolist())
+            
+    avg_loss = total_loss / len(dataloader)
+    f1 = f1_score(y_true, y_pred, zero_division=0)
+    recall = recall_score(y_true, y_pred, zero_division=0)
+    
+    return avg_loss, f1, recall
 
-            prob = torch.sigmoid(logits)
-            pred = (prob > THRESHOLD_TREINAMENTO).float()
+def run_training(config, model, train_dl, val_dl, pos_weight):
+    print(f"Peso para a classe positiva (Melanoma) na loss: {pos_weight:.2f}")
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=config['DEVICE']))
+    optimizer = torch.optim.Adam(model.parameters(), lr=config['LR'])
 
-            y_true += lbls.tolist()
-            y_pred += pred.tolist()
-            y_prob += prob.tolist()
+    best_f1_mel = 0
+    patience_counter = 0
+    history = {
+        'train_loss': [], 'val_loss': [],
+        'val_recall': [], 'val_f1': []
+    }
 
-            val_acc += (pred == lbls).float().mean().item()
+    for epoch in range(config['EPOCHS']):
+        print(f"\n--- Época {epoch+1}/{config['EPOCHS']} ---")
+        
+        train_loss, train_acc = train_one_epoch(model, train_dl, criterion, optimizer, config['DEVICE'], config['THRESHOLD'])
+        history['train_loss'].append(train_loss)
+        print(f"Resultado Treino: Perda={train_loss:.4f} | Acurácia={train_acc:.4f}")
+        
+        val_loss, val_f1, val_recall = evaluate(model, val_dl, criterion, config['DEVICE'], config['THRESHOLD'])
+        history['val_loss'].append(val_loss)
+        history['val_f1'].append(val_f1)
+        history['val_recall'].append(val_recall)
+        print(f"Resultado Validação: Perda={val_loss:.4f} | Recall MEL={val_recall:.4f} | F1 MEL={val_f1:.4f}")
 
-    val_loss /= len(val_dl)
-    val_acc /= len(val_dl)
-    prec = precision_score(y_true, y_pred)
-    rec = recall_score(y_true, y_pred)
-    f1 = f1_score(y_true, y_pred)
+        if val_f1 > best_f1_mel:
+            best_f1_mel = val_f1
+            torch.save(model.state_dict(), "resultados/best_model.pt")
+            print(f"Novo melhor modelo salvo com F1-Score: {best_f1_mel:.4f}")
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= config['PATIENCE']:
+                print("\nParando por early stopping: paciência esgotada.")
+                break
+    
+    return history
 
-    val_loss_history.append(val_loss)
-    val_recall_mel_history.append(rec)
-    val_f1_history.append(f1)
+def generate_final_report(config, model, test_dl):
+    print("\n--- Iniciando Avaliação Final no Conjunto de Teste ---")
+    model.load_state_dict(torch.load("resultados/best_model.pt"))
+    model.eval()
 
-    print(f"[Época {ep+1}] Erro de Validação: {val_loss:.4f} | Acurácia: {val_acc:.4f} | Recall MEL: {rec:.4f} | F1 MEL: {f1:.4f}")
+    y_true, y_prob = [], []
+    with torch.no_grad():
+        for imgs, lbls in tqdm(test_dl, desc="Teste Final"):
+            imgs = imgs.to(config['DEVICE'])
+            logits = model(imgs).squeeze(1)
+            y_prob.extend(torch.sigmoid(logits).cpu().tolist())
+            y_true.extend(lbls.tolist())
+    
+    y_pred_final = [1 if p > config['THRESHOLD'] else 0 for p in y_prob]
+    
+    report = classification_report(y_true, y_pred_final, target_names=['Nevo (nv)', 'Melanoma (mel)'])
+    roc_auc = roc_auc_score(y_true, y_prob)
+    print("\n===== Relatório Final no Conjunto de Teste =====")
+    print(report)
+    print(f"AUC da Curva ROC: {roc_auc:.4f}")
 
-    if f1 > best_f1_mel:
-        best_f1_mel = f1
-        torch.save(model.state_dict(), "resultados/best_model.pt")
-        counter = 0
-    else:
-        counter += 1
-        if counter >= patience:
-            print("Parando early: paciência esgotada.")
-            break
+    with open("resultados/relatorio_teste.txt", "w") as f:
+        f.write("===== Relatório Final no Conjunto de Teste =====\n")
+        f.write(report)
+        f.write(f"\nAUC da Curva ROC: {roc_auc:.4f}\n")
+        
+    cm = confusion_matrix(y_true, y_pred_final)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Nevo", "Melanoma"])
+    disp.plot(cmap='Blues', values_format='d')
+    plt.title("Matriz de Confusão - Conjunto de Teste")
+    plt.tight_layout()
+    plt.savefig("resultados/matriz_confusao.png", dpi=300)
+    plt.show()
 
-# Avaliação do modelo no conjunto de teste
-# Carrega o melhor modelo salvo
-# Printa no terminal o resultado e gera gráficos para avaliar o melhro threshold 
-model.load_state_dict(torch.load("resultados/best_model.pt"))
-model.eval()
+if __name__ == '__main__':
+    
+    config = get_config()
+    print(config['THRESHOLD'])
+    random.seed(config['SEED'])
+    np.random.seed(config['SEED'])
+    torch.manual_seed(config['SEED'])
+    torch.cuda.manual_seed_all(config['SEED'])
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
-y_true, y_prob = [], []
-with torch.no_grad():
-    for imgs, lbls in test_dl:
-        imgs = imgs.to(DEVICE)
-        logits = model(imgs).squeeze(1)
-        y_prob += torch.sigmoid(logits).cpu().tolist()
-        y_true += lbls.tolist()
+    os.makedirs("resultados", exist_ok=True)
+    print(f"Usando dispositivo: {config['DEVICE']}")
 
-print("Avaliação com diferentes thresholds:")
-thresholds = [0.25, 0.30, 0.35, 0.40, 0.45, 0.50]
-precision_list, recall_list, f1_list = [], [], []
+    train_dl, val_dl, test_dl, pos_weight = prepare_data(config)
+    
+    model = build_model(config['DEVICE'])
+    
+    history = run_training(config, model, train_dl, val_dl, pos_weight)
 
-for thresh in thresholds:
-    y_pred = [1 if p > thresh else 0 for p in y_prob]
-    prec = precision_score(y_true, y_pred)
-    rec = recall_score(y_true, y_pred)
-    f1 = f1_score(y_true, y_pred)
-    precision_list.append(prec)
-    recall_list.append(rec)
-    f1_list.append(f1)
-    print(f"Threshold={thresh:.2f} | Precision: {prec:.2f} | Recall: {rec:.2f} | F1: {f1:.2f}")
-
-plt.figure(figsize=(8,5))
-plt.plot(thresholds, precision_list, marker='o', label='Precision')
-plt.plot(thresholds, recall_list, marker='o', label='Recall')
-plt.plot(thresholds, f1_list, marker='o', label='F1 Score')
-plt.axvline(THRESHOLD_TREINAMENTO, color='gray', linestyle='--', label='Threshold Treinamento')
-plt.xlabel("Threshold")
-plt.ylabel("Valor")
-plt.title("Métricas no Conjunto de Teste por Threshold")
-plt.legend()
-plt.tight_layout()
-plt.savefig("resultados/avaliacao_thresholds.png", dpi=300)
-plt.show()
-
-y_pred_final = [1 if p > THRESHOLD_TREINAMENTO else 0 for p in y_prob]
-
-print("\n===== Relatório Final no Conjunto de Teste =====")
-print(classification_report(y_true, y_pred_final, target_names=['Nevo (nv)', 'Melanoma (mel)']))
-
-roc_auc = roc_auc_score(y_true, y_prob)
-print(f"AUC da Curva ROC: {roc_auc:.4f}")
-
-cm = confusion_matrix(y_true, y_pred_final)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Nevo", "Melanoma"])
-disp.plot(cmap='Blues', values_format='d')
-plt.title("Matriz de Confusão - Conjunto de Teste")
-plt.xlabel("Classe Predita")
-plt.ylabel("Classe Real")
-plt.tight_layout()
-plt.savefig("resultados/matriz_confusao.png", dpi=300, bbox_inches='tight')
-plt.show()
-
-plt.figure(figsize=(8,5))
-plt.plot(train_loss_history, label='Train Loss')
-plt.plot(val_loss_history, label='Val Loss')
-plt.plot(val_recall_mel_history, label='Recall MEL')
-plt.plot(val_f1_history, label='F1 Score')
-plt.xlabel("Época")
-plt.ylabel("Valor")
-plt.title("Histórico de Treinamento")
-plt.legend()
-plt.tight_layout()
-plt.savefig("resultados/historico_treinamento.png", dpi=300)
-plt.show()
-
-with open("resultados/relatorio_teste.txt", "w") as f:
-    f.write("===== Relatório Final no Conjunto de Teste =====\n")
-    f.write(classification_report(y_true, y_pred_final, target_names=['Nevo (nv)', 'Melanoma (mel)']))
-    f.write(f"\nAUC da Curva ROC: {roc_auc:.4f}\n")
+    generate_final_report(config, model, test_dl)
