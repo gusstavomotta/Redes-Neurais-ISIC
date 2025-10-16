@@ -1,4 +1,4 @@
-===== Relatório Final no Conjunto de Teste =====
+===== Relatório Final no Conjunto de Teste (Threshold=0.5) =====
                 precision    recall  f1-score   support
 
      Nevo (nv)       0.98      0.93      0.96      1006
