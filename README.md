@@ -8,12 +8,10 @@ O modelo foi desenvolvido em PyTorch, com suporte a GPU (CUDA) para acelerar o t
 Python 3.11: https://www.python.org/downloads/release/python-3110/
 
 ⚙️ Instalação
-1️⃣ Clonar o repositório
 
+1️⃣ Clonar o repositório
 Você pode clonar o projeto de duas formas:
 gh repo clone gusstavomotta/Redes-Neurais-ISIC
-
-ou
 
 git clone https://github.com/gusstavomotta/Redes-Neurais-ISIC.git
 cd Redes-Neurais-ISIC
