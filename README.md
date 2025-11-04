@@ -34,7 +34,7 @@ source venv/bin/activate
 Atualize o pip:
 pip install --upgrade pip
 
-🧩 Instalar PyTorch com suporte a CUDA (recomendado se possuir GPU NVIDIA)
+🧩 Instalar PyTorch com suporte a CUDA (recomendado se possuir GPU NVIDIA): 
 pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
 🔸 Caso não possua GPU, instale a versão CPU:
