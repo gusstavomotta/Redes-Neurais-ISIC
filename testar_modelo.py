@@ -6,21 +6,21 @@ from PIL import Image
 import os
 
 MODEL_WEIGHTS_PATH = "resultados/best_model.pt" 
-IMAGE_TO_TEST = "foto_real_teste.jpg" # Coloque sua foto real aqui
+IMAGE_TO_TEST = "foto_real_teste.jpg" 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Usando dispositivo: {DEVICE}")
 
 def build_model(device):
     model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2) 
-    model.fc = nn.Linear(model.fc.in_features, 1) # Modifica a saída para 1
+    model.fc = nn.Linear(model.fc.in_features, 1) #
     model = model.to(device)
     return model
 
-# Estas são as transformações exatas que o app Flutter deverá replicar
+
 data_transforms = T.Compose([
-    T.Resize((224, 224)), # Redimensiona para 224x224
-    T.ToTensor(),         # Converte de 0-255 (PIL) para 0.0-1.0 (Tensor)
-    T.Normalize(mean=[0.485, 0.456, 0.406], # Normaliza com médias da ImageNet
+    T.Resize((224, 224)), 
+    T.ToTensor(),         
+    T.Normalize(mean=[0.485, 0.456, 0.406],
                   std=[0.229, 0.224, 0.225])
 ])
 print("Transformações de teste carregadas.")

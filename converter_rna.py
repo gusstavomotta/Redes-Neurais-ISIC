@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torchvision.models import resnet50, ResNet50_Weights # Importamos ResNet50_Weights por clareza, mas usaremos 'None'
+from torchvision.models import resnet50, ResNet50_Weights 
 from torch.utils.mobile_optimizer import optimize_for_mobile
 import os
 

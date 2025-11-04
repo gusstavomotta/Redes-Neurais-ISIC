@@ -189,12 +189,10 @@ def run_training(config, model, train_dl, val_dl, pos_weight):
     return history
 
 def generate_final_report(config, model, test_dl):
-    """Carrega o melhor modelo, gera a análise multi-threshold e o relatório final."""
     print("\n--- Iniciando Avaliação Final no Conjunto de Teste ---")
     model.load_state_dict(torch.load("resultados/best_model.pt"))
     model.eval()
 
-    # Etapa 1: Obter as previsões do modelo no conjunto de teste
     y_true, y_prob = [], []
     with torch.no_grad():
         for imgs, lbls in tqdm(test_dl, desc="Teste Final"):
@@ -203,10 +201,8 @@ def generate_final_report(config, model, test_dl):
             y_prob.extend(torch.sigmoid(logits).cpu().tolist())
             y_true.extend(lbls.tolist())
     
-    # --- INÍCIO DA ANÁLISE MULTI-THRESHOLD (FUNCIONALIDADE REINTEGRADA) ---
     print("\n--- Avaliação com Diferentes Thresholds ---")
     
-    # Define uma faixa de thresholds para testar (mais granular que antes)
     thresholds_to_test = np.arange(0.25, 0.76, 0.05) 
     precision_list, recall_list, f1_list = [], [], []
 
@@ -221,13 +217,11 @@ def generate_final_report(config, model, test_dl):
         f1_list.append(f1)
         print(f"Threshold={thresh:.2f} | Precision: {prec:.2f} | Recall: {rec:.2f} | F1: {f1:.2f}")
 
-    # Plotar o gráfico de métricas vs. threshold
     plt.figure(figsize=(10, 6))
     plt.plot(thresholds_to_test, precision_list, marker='o', label='Precision')
     plt.plot(thresholds_to_test, recall_list, marker='o', label='Recall')
     plt.plot(thresholds_to_test, f1_list, marker='o', label='F1 Score')
     
-    # Adiciona a linha vertical mostrando o threshold usado no relatório final
     plt.axvline(config['THRESHOLD'], color='red', linestyle='--', label=f"Threshold Configurado ({config['THRESHOLD']})")
     
     plt.xlabel("Threshold")
@@ -238,9 +232,7 @@ def generate_final_report(config, model, test_dl):
     plt.tight_layout()
     plt.savefig("resultados/avaliacao_thresholds.png", dpi=300)
     plt.show()
-    # --- FIM DA ANÁLISE MULTI-THRESHOLD ---
 
-    # Etapa 2: Gerar o relatório final com o threshold definido no config
     print(f"\n--- Relatório Final com Threshold={config['THRESHOLD']} ---")
     y_pred_final = [1 if p > config['THRESHOLD'] else 0 for p in y_prob]
     
@@ -250,13 +242,11 @@ def generate_final_report(config, model, test_dl):
     print(report)
     print(f"AUC da Curva ROC: {roc_auc:.4f}")
 
-    # Salva o relatório em arquivo
     with open("resultados/relatorio_teste.txt", "w") as f:
         f.write(f"===== Relatório Final no Conjunto de Teste (Threshold={config['THRESHOLD']}) =====\n")
         f.write(report)
         f.write(f"\nAUC da Curva ROC: {roc_auc:.4f}\n")
         
-    # Gera e salva a matriz de confusão
     cm = confusion_matrix(y_true, y_pred_final)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Nevo", "Melanoma"])
     disp.plot(cmap='Blues', values_format='d')
