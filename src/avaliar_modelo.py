@@ -6,7 +6,7 @@ from PIL import Image
 import os
 
 MODEL_WEIGHTS_PATH = "resultados/best_model.pt" 
-IMAGE_TO_TEST = "imagem_teste/image.png" 
+IMAGE_TO_TEST = "imagem_avaliacao/image.png" 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Usando dispositivo: {DEVICE}")
 
