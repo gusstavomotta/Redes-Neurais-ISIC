@@ -61,10 +61,21 @@ def predict():
 
         prob_valor = probabilidade.item()
         
-        print(f"Inferência bem-sucedida, retornando: {prob_valor:.4f}")
+        threshold = 0.5
+        
+        if prob_valor > threshold:
+            classificacao = "Melanoma (Positivo)"
+        else:
+            classificacao = "Nevo (Não-Melanoma)"
+            
+        prob_percentual_str = f"{prob_valor * 100:.2f}%"
+        
+        print(f"Inferência bem-sucedida, retornando: {classificacao} ({prob_percentual_str})")
 
         return jsonify({
             "probabilidade": prob_valor,
+            "porcentagem": prob_percentual_str,
+            "classificacao": classificacao,     
             "logit": output_logit.item()
         })
         

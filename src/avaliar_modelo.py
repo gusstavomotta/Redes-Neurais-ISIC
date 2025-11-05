@@ -56,11 +56,24 @@ def test_single_image():
         probabilidade = torch.sigmoid(output_logit)
 
     prob_valor = probabilidade.item()
+    logit_valor = output_logit.item()
     
-    print("   RESULTADO DA INFERÊNCIA (PYTHON)")
-    print("="*30)
-    print(f"Saída (Logit): {output_logit.item():.4f}")
-    print(f"Probabilidade: {prob_valor:.4f}")
+    threshold = 0.5
+    if prob_valor > threshold:
+        classificacao = "MELANOMA (Positivo)"
+    else:
+        classificacao = "NEVO (Não-Melanoma / Negativo)"
+        
+    prob_percentual = prob_valor * 100
+
+    print("RESULTADO DA INFERÊNCIA")
+    print(f"Imagem Testada:   {IMAGE_TO_TEST}")
+    print("-" * 40)
+    print(f"Logit (Saída Bruta):      {logit_valor:.4f}")
+    print(f"Probabilidade (Melanoma): {prob_percentual:.2f}% (Valor: {prob_valor:.6f})")
+    print("\nClassificação (com Threshold 0.5):")
+    print(f">>> {classificacao}")
+    print("========================================")
 
 if __name__ == '__main__':
     test_single_image()
