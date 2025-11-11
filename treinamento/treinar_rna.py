@@ -43,8 +43,8 @@ class SkinDataset(Dataset):
 
 def get_config():
     return {
-        "DATA_DIR": 'data',
-        "CSV_PATH": 'data/HAM10000_metadata.csv',
+        "DATA_DIR": 'treinamento/data',
+        "CSV_PATH": 'treinamento/data/HAM10000_metadata.csv',
         "DEVICE": torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
         "BATCH_SIZE": 16,
         "LR": 1e-4,
@@ -63,9 +63,6 @@ def prepare_data(config):
     train_df, temp_df = train_test_split(df, stratify=df['label'], test_size=0.3, random_state=config['SEED'])
     val_df, test_df = train_test_split(temp_df, stratify=temp_df['label'], test_size=0.5, random_state=config['SEED'])
 
-    print("Distribuição de classes no treino (ANTES do balanceamento):")
-    print(train_df['label'].value_counts())
-    
     tf_train = T.Compose([
         T.Resize((224, 224)),
         T.RandomHorizontalFlip(),
@@ -151,7 +148,6 @@ def evaluate(model, dataloader, criterion, device, threshold):
     return avg_loss, f1, recall
 
 def run_training(config, model, train_dl, val_dl, pos_weight):
-    print(f"Peso para a classe positiva (Melanoma) na loss: {pos_weight:.2f}")
     criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=config['DEVICE']))
     optimizer = torch.optim.Adam(model.parameters(), lr=config['LR'])
 
@@ -163,34 +159,27 @@ def run_training(config, model, train_dl, val_dl, pos_weight):
     }
 
     for epoch in range(config['EPOCHS']):
-        print(f"\n--- Época {epoch+1}/{config['EPOCHS']} ---")
-        
         train_loss, train_acc = train_one_epoch(model, train_dl, criterion, optimizer, config['DEVICE'], config['THRESHOLD'])
         history['train_loss'].append(train_loss)
-        print(f"Resultado Treino: Perda={train_loss:.4f} | Acurácia={train_acc:.4f}")
         
         val_loss, val_f1, val_recall = evaluate(model, val_dl, criterion, config['DEVICE'], config['THRESHOLD'])
         history['val_loss'].append(val_loss)
         history['val_f1'].append(val_f1)
         history['val_recall'].append(val_recall)
-        print(f"Resultado Validação: Perda={val_loss:.4f} | Recall MEL={val_recall:.4f} | F1 MEL={val_f1:.4f}")
 
         if val_f1 > best_f1_mel:
             best_f1_mel = val_f1
-            torch.save(model.state_dict(), "resultados/best_model.pt")
-            print(f"Novo melhor modelo salvo com F1-Score: {best_f1_mel:.4f}")
+            torch.save(model.state_dict(), "treinamento/resultados/best_model.pt")
             patience_counter = 0
         else:
             patience_counter += 1
             if patience_counter >= config['PATIENCE']:
-                print("\nParando por early stopping: paciência esgotada.")
                 break
     
     return history
 
 def generate_final_report(config, model, test_dl):
-    print("\n--- Iniciando Avaliação Final no Conjunto de Teste ---")
-    model.load_state_dict(torch.load("resultados/best_model.pt"))
+    model.load_state_dict(torch.load("treinamento/resultados/best_model.pt"))
     model.eval()
 
     y_true, y_prob = [], []
@@ -200,8 +189,6 @@ def generate_final_report(config, model, test_dl):
             logits = model(imgs).squeeze(1)
             y_prob.extend(torch.sigmoid(logits).cpu().tolist())
             y_true.extend(lbls.tolist())
-    
-    print("\n--- Avaliação com Diferentes Thresholds ---")
     
     thresholds_to_test = np.arange(0.25, 0.76, 0.05) 
     precision_list, recall_list, f1_list = [], [], []
@@ -215,7 +202,6 @@ def generate_final_report(config, model, test_dl):
         precision_list.append(prec)
         recall_list.append(rec)
         f1_list.append(f1)
-        print(f"Threshold={thresh:.2f} | Precision: {prec:.2f} | Recall: {rec:.2f} | F1: {f1:.2f}")
 
     plt.figure(figsize=(10, 6))
     plt.plot(thresholds_to_test, precision_list, marker='o', label='Precision')
@@ -230,19 +216,14 @@ def generate_final_report(config, model, test_dl):
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
-    plt.savefig("resultados/avaliacao_thresholds.png", dpi=300)
-    plt.show()
+    plt.savefig("treinamento/resultados/avaliacao_thresholds.png", dpi=300)
 
-    print(f"\n--- Relatório Final com Threshold={config['THRESHOLD']} ---")
     y_pred_final = [1 if p > config['THRESHOLD'] else 0 for p in y_prob]
     
     report = classification_report(y_true, y_pred_final, target_names=['Nevo (nv)', 'Melanoma (mel)'])
     roc_auc = roc_auc_score(y_true, y_prob)
-    print("\n===== Relatório Final no Conjunto de Teste =====")
-    print(report)
-    print(f"AUC da Curva ROC: {roc_auc:.4f}")
 
-    with open("resultados/relatorio_teste.txt", "w") as f:
+    with open("treinamento/resultados/relatorio_teste.txt", "w") as f:
         f.write(f"===== Relatório Final no Conjunto de Teste (Threshold={config['THRESHOLD']}) =====\n")
         f.write(report)
         f.write(f"\nAUC da Curva ROC: {roc_auc:.4f}\n")
@@ -252,13 +233,10 @@ def generate_final_report(config, model, test_dl):
     disp.plot(cmap='Blues', values_format='d')
     plt.title(f"Matriz de Confusão (Threshold={config['THRESHOLD']})")
     plt.tight_layout()
-    plt.savefig("resultados/matriz_confusao.png", dpi=300)
-    plt.show()
+    plt.savefig("treinamento/resultados/matriz_confusao.png", dpi=300)
 
 if __name__ == '__main__':
-    
     config = get_config() 
-    print(config['THRESHOLD'])
     random.seed(config['SEED'])
     np.random.seed(config['SEED'])
     torch.manual_seed(config['SEED'])
@@ -266,8 +244,7 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    os.makedirs("resultados", exist_ok=True)
-    print(f"Usando dispositivo: {config['DEVICE']}")
+    os.makedirs("treinamento/resultados", exist_ok=True)
 
     train_dl, val_dl, test_dl, pos_weight = prepare_data(config)
     
