@@ -18,6 +18,7 @@ from sklearn.metrics import (
 )
 from tqdm import tqdm
 from gerar_relatorio_treinamento import generate_final_report
+
 class SkinDataset(Dataset):
     def __init__(self, df, img_dir, transforms=None):
         self.df = df.reset_index(drop=True)
@@ -45,7 +46,7 @@ def get_config():
         "DEVICE": torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
         "BATCH_SIZE": 16,
         "LR": 1e-4,
-        "EPOCHS": 25,
+        "EPOCHS": 1,
         "THRESHOLD": 0.5,
         "SEED": 42,
         "NUM_WORKERS": 4,

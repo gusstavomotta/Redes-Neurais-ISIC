@@ -14,7 +14,6 @@ MODEL_WEIGHTS_PATH = "treinamento/resultados/best_model.pt"
 DATA_DIR = "treinamento/data"
 CSV_PATH = "treinamento/data/HAM10000_metadata.csv"
 CSV_LOCK_PATH = "treinamento/data/HAM10000_metadata.csv.lock"
-
 DEVICE = torch.device('cpu')
 
 def build_model(device):
