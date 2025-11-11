@@ -1,25 +1,20 @@
 import torch
-import torch.nn as nn
-from torchvision.models import resnet50, ResNet50_Weights
-import torchvision.transforms as T
 from PIL import Image
 import os
+import sys
+from pathlib import Path
 
-MODEL_WEIGHTS_PATH = "treinamento/resultados/best_model.pt" 
-IMAGE_TO_TEST = "avaliacao/image.png" 
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+PROJECT_ROOT = Path(__file__).resolve().parent.parent 
+sys.path.append(str(PROJECT_ROOT))
 
-def build_model(device):
-    model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2) 
-    model.fc = nn.Linear(model.fc.in_features, 1)
-    model = model.to(device)
-    return model
+from config import (
+    MODEL_WEIGHTS_PATH, IMAGE_TO_TEST, DEVICE_TREINO_EVAL, 
+    THRESHOLD, CLASSES_MAP
+)
+from treinamento.model_utils import build_model, get_data_transforms
 
-data_transforms = T.Compose([
-    T.Resize((224, 224)), 
-    T.ToTensor(),         
-    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
+DEVICE = DEVICE_TREINO_EVAL
+data_transforms = get_data_transforms(use_augmentation=False)
 
 def test_single_image():
     if not os.path.exists(IMAGE_TO_TEST):
@@ -27,7 +22,13 @@ def test_single_image():
         return
 
     model = build_model(DEVICE)
-    model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location=DEVICE))
+    
+    try:
+        model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location=DEVICE))
+    except FileNotFoundError:
+        print(f"ERRO: Pesos do modelo não encontrados em: {MODEL_WEIGHTS_PATH}")
+        return
+    
     model.eval()
 
     try:
@@ -42,9 +43,9 @@ def test_single_image():
         probabilidade = torch.sigmoid(output_logit)
 
     prob_valor = probabilidade.item()
-    threshold = 0.5
     
-    classificacao = "MELANOMA (Positivo)" if prob_valor > threshold else "NEVO (Negativo)"
+    pred_label = 1 if prob_valor > THRESHOLD else 0
+    classificacao = CLASSES_MAP[pred_label]
     prob_percentual = prob_valor * 100
 
     print(f"\n=== RESULTADO PARA: {os.path.basename(IMAGE_TO_TEST)} ===")
