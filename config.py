@@ -30,8 +30,8 @@ IMAGE_TO_TEST = BASE_DIR / "avaliacao" / "image.png"
 # Hiperparâmetros de Treinamento 
 BATCH_SIZE = 16
 LR = 1e-4
-EPOCHS = 1
-NUM_WORKERS = 4
+EPOCHS = 25
+NUM_WORKERS = 8
 PATIENCE = 5
 
 # Configurações do Modelo e Imagem

@@ -35,7 +35,7 @@ class SkinDataset(Dataset):
         return img, lbl
 
 def prepare_data(config):
-    df = pd.read_csv(cfg.CSV_PATH) # Usa o módulo de config importado
+    df = pd.read_csv(cfg.CSV_PATH)
     df = df[df['dx'].isin(cfg.CLASSES_UPLOAD)]
     df['label'] = (df['dx'] == 'mel').astype(int)
 

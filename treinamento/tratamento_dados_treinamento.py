@@ -1,5 +1,3 @@
-# C:\dev\Redes-Neurais-ISIC\treinamento\tratamento_dados_treinamento.py
-# (VERSÃO LIMPA)
 
 import os
 import zipfile
@@ -10,10 +8,8 @@ import time
 import sys
 from pathlib import Path
 
-# --- Hack para adicionar a raiz do projeto ao sys.path ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent 
 sys.path.append(str(PROJECT_ROOT))
-# --- Fim do Hack ---
 
 import config 
 
@@ -24,7 +20,6 @@ def run_setup():
         print(f"ERRO: Arquivo '{config.ZIP_FILE_NAME}' não encontrado.")
         return
     if os.path.exists(config.DATA_DIR):
-        # Mantive este AVISO pois ele impede a execução
         print(f"AVISO: A pasta '{config.DATA_DIR}' já existe. Setup não será executado.")
         return
 
@@ -49,7 +44,6 @@ def run_setup():
                 and os.path.basename(fp) in image_ids_to_keep
             ]
 
-            # A barra do tqdm ainda vai aparecer, o que é bom.
             for file_path in tqdm(files_to_extract, desc="Extraindo imagens"):
                 image_name = os.path.basename(file_path)
                 dest_path = os.path.join(config.DATA_DIR, image_name)
