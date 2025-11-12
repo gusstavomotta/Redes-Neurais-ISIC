@@ -1,0 +1,1 @@
+web: gunicorn servidor.servidor:app --preload
