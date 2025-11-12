@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# 1. Tenta inicializar o banco de dados usando o caminho do módulo correto
 echo "Iniciando o banco de dados (db.create_all())..."
 
 python << END
@@ -24,17 +23,13 @@ except Exception as e:
     exit(1) # Sai com erro
 END
 
-# Captura o status de saída do script python
 STATUS=$?
 
-# Se o script python falhou (status != 0), o container para.
 if [ $STATUS -ne 0 ]; then
     echo "!!! Falha no script de inicialização. O deploy vai parar."
     exit $STATUS
 fi
 
-# 2. Se tudo deu certo, inicia o Gunicorn com o caminho do módulo correto
 echo "Inicialização concluída. Iniciando Gunicorn..."
-# Caminho corrigido:
-# Linha NOVA:
+
 gunicorn servidor.servidor:app --bind 0.0.0.0:$PORT --timeout 120

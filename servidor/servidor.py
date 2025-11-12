@@ -9,15 +9,9 @@ import sys
 from pathlib import Path
 from flask_sqlalchemy import SQLAlchemy
 
-# --- INÍCIO DA CORREÇÃO DE PATH ---
-# __file__ é /app/servidor/servidor.py
-# .parent é /app/servidor
-# .parent.parent é /app (a raiz do projeto)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
-# --- FIM DA CORREÇÃO DE PATH ---
 
-# Agora estas importações funcionam, pois a raiz /app está no path
 from config import (
     MODEL_WEIGHTS_PATH, DATA_DIR, DEVICE_SERVIDOR, 
     THRESHOLD, CLASSES_MAP, CLASSES_UPLOAD
@@ -39,10 +33,22 @@ except FileNotFoundError:
 
 app = Flask(__name__)
 
-# --- Configuração do Banco de Dados ---
+# --- INÍCIO DA CORREÇÃO DO BANCO DE DADOS ---
+# Configuração Padrão
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# ADIÇÃO: Configura o "motor" para ser robusto em produção (Railway/Heroku)
+# Isso corrige o problema de "carregamento infinito" na segunda requisição.
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,  # Verifica se a conexão está "viva" antes de usar
+    'pool_recycle': 280     # Recicla a conexão a cada 280s (menos de 5 min)
+}
+
+# Inicializa o DB DEPOIS de todas as configs
 db = SQLAlchemy(app)
+# --- FIM DA CORREÇÃO ---
+
 
 class SkinLesion(db.Model):
     __tablename__ = 'skin_lesions'
@@ -54,7 +60,6 @@ class SkinLesion(db.Model):
     age = db.Column(db.Float, nullable=True)
     sex = db.Column(db.String(10), nullable=True)
     localization = db.Column(db.String(50), nullable=True)
-# --- Fim da Configuração do DB ---
 
 @app.route("/predict", methods=["POST"])
 def predict():
