@@ -6,8 +6,7 @@ THRESHOLD = 0.5
 DEVICE_TREINO_EVAL = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
 DEVICE_SERVIDOR = torch.device('cpu') 
 
-BASE_DIR = Path(__file__).resolve().parent 
-
+BASE_DIR = Path("/data")
 # Dados de Treinamento
 DATA_DIR = BASE_DIR / "treinamento" / "data"
 CSV_PATH = DATA_DIR / "HAM10000_metadata.csv"

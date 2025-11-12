@@ -105,5 +105,5 @@ def upload():
 
 
 if __name__ == '__main__':
-    os.makedirs(DATA_DIR, exist_ok=True) 
-    app.run(debug=True, host="0.0.0.0", port=5000)
+
+    os.makedirs(DATA_DIR, exist_ok=True)
