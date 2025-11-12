@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# 1. Tenta inicializar o banco de dados e nos diz o ERRO REAL
+# 1. Tenta inicializar o banco de dados usando o caminho do módulo correto
 echo "Iniciando o banco de dados (db.create_all())..."
 
-# Usamos um script python multi-linha para capturar o erro
 python << END
 try:
-    print("Tentando importar 'servidor'...")
-    from servidor import app, db
+    print("Tentando importar 'servidor.servidor'...")
+    # Caminho corrigido:
+    from servidor.servidor import app, db
     print("Importação bem-sucedida.")
     
     with app.app_context():
@@ -33,6 +33,7 @@ if [ $STATUS -ne 0 ]; then
     exit $STATUS
 fi
 
-# 2. Se tudo deu certo, inicia o servidor web
+# 2. Se tudo deu certo, inicia o Gunicorn com o caminho do módulo correto
 echo "Inicialização concluída. Iniciando Gunicorn..."
-gunicorn servidor:app --bind 0.0.0.0:$PORT
+# Caminho corrigido:
+gunicorn servidor.servidor:app --bind 0.0.0.0:$PORT

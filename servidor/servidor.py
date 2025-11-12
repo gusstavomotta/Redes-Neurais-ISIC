@@ -1,3 +1,4 @@
+# Em servidor/servidor.py
 import torch
 from PIL import Image
 import os
@@ -6,16 +7,21 @@ import uuid
 from flask import Flask, request, jsonify
 import sys
 from pathlib import Path
-from flask_sqlalchemy import SQLAlchemy 
+from flask_sqlalchemy import SQLAlchemy
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+# --- INÍCIO DA CORREÇÃO DE PATH ---
+# __file__ é /app/servidor/servidor.py
+# .parent é /app/servidor
+# .parent.parent é /app (a raiz do projeto)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
+# --- FIM DA CORREÇÃO DE PATH ---
 
+# Agora estas importações funcionam, pois a raiz /app está no path
 from config import (
     MODEL_WEIGHTS_PATH, DATA_DIR, DEVICE_SERVIDOR, 
     THRESHOLD, CLASSES_MAP, CLASSES_UPLOAD
 )
-
 from treinamento.model_utils import build_model, get_data_transforms
 
 DEVICE = DEVICE_SERVIDOR
@@ -33,6 +39,7 @@ except FileNotFoundError:
 
 app = Flask(__name__)
 
+# --- Configuração do Banco de Dados ---
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
@@ -42,22 +49,51 @@ class SkinLesion(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     lesion_id = db.Column(db.String(100))
     image_id = db.Column(db.String(100), unique=True, nullable=False)
-    dx = db.Column(db.String(20)) # 'nv' ou 'mel'
+    dx = db.Column(db.String(20))
     dx_type = db.Column(db.String(50))
     age = db.Column(db.Float, nullable=True)
     sex = db.Column(db.String(10), nullable=True)
     localization = db.Column(db.String(50), nullable=True)
-
+# --- Fim da Configuração do DB ---
 
 @app.route("/predict", methods=["POST"])
 def predict():
+    # ... (Seu código aqui está correto) ...
     if model is None:
         return jsonify({"erro": "Modelo não foi carregado com sucesso."}), 503
-    pass
+
+    if 'image' not in request.files:
+        return jsonify({"erro": "Nenhum arquivo de imagem enviado"}), 400
+
+    file = request.files['image']
+
+    try:
+        img_bytes = file.read()
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        input_tensor = data_transforms(img).unsqueeze(0).to(DEVICE)
+
+        with torch.no_grad():
+            output_logit = model(input_tensor)
+            probabilidade = torch.sigmoid(output_logit).item()
+
+        pred_label = 1 if probabilidade > THRESHOLD else 0
+        classificacao = CLASSES_MAP[pred_label]
+        prob_percentual = f"{probabilidade * 100:.2f}%"
+
+        return jsonify({
+            "probabilidade": probabilidade,
+            "porcentagem": prob_percentual,
+            "classificacao": classificacao,
+            "logit": output_logit.item()
+        })
+
+    except Exception as e:
+        return jsonify({"erro": f"Erro durante a predição: {str(e)}"}), 500
 
 
 @app.route("/upload", methods=["POST"])
 def upload():
+    # ... (Seu código aqui está correto) ...
     if 'image' not in request.files:
         return jsonify({"erro": "Nenhuma imagem enviada"}), 400
     if 'classification' not in request.form:
