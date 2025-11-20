@@ -7,8 +7,7 @@ Você precisa especificamente da versão 3.11 do Python. Baixe e instale a parti
 O projeto usa o dataset "Skin Cancer MNIST: HAM10000". Baixe os arquivos neste link: https://www.kaggle.com/datasets/kmader/skin-cancer-mnist-ham10000?resource=download
 
 3. Preparar a Pasta de Dados
-Na pasta principal do seu projeto (onde está seu código), crie uma nova pasta chamada "data".
-Pegue todos os arquivos que você baixou do Kaggle (todas as imagens .jpg e o arquivo "HAM10000_metadata.csv") e mova-os para dentro desta pasta "data" que você acabou de criar.
+Após realizar o download do dataset coloque o archive.zip na pasta raiz do projeto e rode o 'tratamento_dados_treinamento.py'. Esse código vai colocar todas as imagens e o csv com os metadados em uma pasta chamada /data. 
 
 4. Configurar o Ambiente Virtual
    
@@ -18,8 +17,6 @@ Digite o comando para criar um ambiente virtual: python3.11 -m venv venv
 Agora, ative esse ambiente:
 Se estiver no Windows: .\venv\Scripts\activate
 Se estiver no Linux ou macOS: source venv/bin/activate
-
-(Você saberá que funcionou se vir "(venv)" no início da linha do seu terminal).
 
 5. Instalar as Dependências (Bibliotecas)
 Com o ambiente ainda ativo, rode o comando para instalar tudo o que está no arquivo requirements.txt: pip install -r requirements.txt
@@ -32,3 +29,5 @@ Na página, selecione as opções corretas para o seu sistema (Ex: Stable, Windo
 O site vai gerar um comando de instalação (algo como "pip install torch...").
 
 Copie esse comando e rode-o no seu terminal (com o ambiente "venv" ativo). Isso vai instalar a versão correta do PyTorch para sua GPU.
+
+Depois que fizer tudo isso o ambiente vai estar pronto e basta rodar os códigos!
