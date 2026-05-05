@@ -1,4 +1,3 @@
-
 import os
 import zipfile
 import pandas as pd
@@ -63,6 +62,3 @@ def run_setup():
     print(f"Pasta final '{config.DATA_DIR}' criada.")
     print(f"{len(clean_df)} imagens unificadas.")
     print("="*40)
-
-if __name__ == '__main__':
-    run_setup()

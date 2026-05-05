@@ -14,29 +14,22 @@ from sklearn.metrics import (
 )
 from tqdm import tqdm
 
-from config import (
-    MODEL_WEIGHTS_PATH, THRESHOLDS_PLOT_PATH, 
-    REPORT_PATH, CONFUSION_MATRIX_PATH, CLASSES_NOMES, THRESHOLD
-)
+import config as cfg
 
-def generate_final_report(config, model, test_dl):
-    
-    threshold = config.get('THRESHOLD', THRESHOLD) 
-    device = config.get('DEVICE', torch.device('cpu'))
-
+def generate_final_report(model, test_dl):
     try:
-        model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location=device))
+        model.load_state_dict(torch.load(cfg.MODEL_WEIGHTS_PATH, map_location=cfg.DEVICE_TREINO_EVAL))
     except FileNotFoundError:
-        print(f"ERRO: Não foi possível carregar o modelo de {MODEL_WEIGHTS_PATH} para gerar o relatório.")
+        print(f"ERRO: Não foi possível carregar o modelo de {cfg.MODEL_WEIGHTS_PATH} para gerar o relatório.")
         return
             
-    model.to(device)
+    model.to(cfg.DEVICE_TREINO_EVAL)
     model.eval()
 
     y_true, y_prob = [], []
     with torch.no_grad():
         for imgs, lbls in tqdm(test_dl, desc="Gerando Relatório"):
-            imgs = imgs.to(device)
+            imgs = imgs.to(cfg.DEVICE_TREINO_EVAL)
             logits = model(imgs).squeeze(1)
             y_prob.extend(torch.sigmoid(logits).cpu().tolist())
             y_true.extend(lbls.tolist())
@@ -54,29 +47,29 @@ def generate_final_report(config, model, test_dl):
     plt.plot(thresholds_to_test, precision_list, marker='o', label='Precision')
     plt.plot(thresholds_to_test, recall_list, marker='o', label='Recall')
     plt.plot(thresholds_to_test, f1_list, marker='o', label='F1 Score')
-    plt.axvline(threshold, color='red', linestyle='--', label=f"Threshold Configurado ({threshold})")
+    plt.axvline(cfg.THRESHOLD, color='red', linestyle='--', label=f"Threshold Configurado ({cfg.THRESHOLD})")
     plt.xlabel("Threshold")
     plt.ylabel("Valor da Métrica")
     plt.title("Métricas no Conjunto de Teste por Threshold")
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
-    plt.savefig(THRESHOLDS_PLOT_PATH, dpi=300)
+    plt.savefig(cfg.THRESHOLDS_PLOT_PATH, dpi=300)
 
-    y_pred_final = [1 if p > threshold else 0 for p in y_prob]
+    y_pred_final = [1 if p > cfg.THRESHOLD else 0 for p in y_prob]
     
-    target_names = [nome.split(" ")[0] for nome in CLASSES_NOMES]
+    target_names = [nome.split(" ")[0] for nome in cfg.CLASSES_NOMES]
     report = classification_report(y_true, y_pred_final, target_names=target_names)
     roc_auc = roc_auc_score(y_true, y_prob)
 
-    with open(REPORT_PATH, "w") as f:
-        f.write(f"===== Relatório Final no Conjunto de Teste (Threshold={threshold}) =====\n")
+    with open(cfg.REPORT_PATH, "w") as f:
+        f.write(f"===== Relatório Final no Conjunto de Teste (Threshold={cfg.THRESHOLD}) =====\n")
         f.write(report)
         f.write(f"\nAUC da Curva ROC: {roc_auc:.4f}\n")
         
     cm = confusion_matrix(y_true, y_pred_final)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=target_names)
     disp.plot(cmap='Blues', values_format='d')
-    plt.title(f"Matriz de Confusão (Threshold={threshold})")
+    plt.title(f"Matriz de Confusão (Threshold={cfg.THRESHOLD})")
     plt.tight_layout()
-    plt.savefig(CONFUSION_MATRIX_PATH, dpi=300)
+    plt.savefig(cfg.CONFUSION_MATRIX_PATH, dpi=300)
